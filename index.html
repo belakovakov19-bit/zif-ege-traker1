@@ -2688,45 +2688,50 @@
     function renderMockScoreChart() {
       const el = document.getElementById("mockScoreChart");
       if (!el) return;
-      const mocks = getMocks().filter(m => m.date && m.scores && SUBJECTS.some(s => m.scores[s.id] != null))
+      const allMocks = getMocks().filter(m => m.date && m.scores)
         .sort((a, b) => a.date.localeCompare(b.date));
-      if (!mocks.length) {
-        el.innerHTML = '<div class="mock-score-chart-title">Динамика баллов по пробникам</div><div class="mock-chart-empty">Добавь пробники с результатами — здесь появится график изменения баллов по датам.</div>';
+      if (!allMocks.length) {
+        el.innerHTML = '<div class="mock-score-chart-title">Динамика баллов по пробникам</div><div class="mock-chart-empty">Добавь пробники с результатами — здесь появятся отдельные графики по предметам.</div>';
         return;
       }
-      const W = 800, H = 280, L = 46, R = 18, T = 18, B = 42;
-      const plotW = W - L - R, plotH = H - T - B;
-      const x = i => mocks.length === 1 ? L + plotW / 2 : L + i * plotW / (mocks.length - 1);
-      const y = v => T + plotH - (Math.max(0, Math.min(100, Number(v) || 0)) / 100) * plotH;
+      const W = 800, H = 250, L = 46, R = 18, T = 18, B = 42;
       const dateLabel = key => {
         const parts = String(key).split('-');
         return parts.length === 3 ? `${parts[2]}.${parts[1]}` : key;
       };
-      let svg = `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="График баллов по пробникам">`;
-      [0, 25, 50, 75, 100].forEach(v => {
-        const yy = y(v);
-        svg += `<line x1="${L}" y1="${yy}" x2="${W-R}" y2="${yy}" stroke="var(--border)" stroke-width="1" />`;
-        svg += `<text x="${L-9}" y="${yy+4}" fill="var(--muted)" font-size="11" text-anchor="end">${v}</text>`;
-      });
-      SUBJECTS.forEach(subject => {
-        const pts = mocks.map((m, i) => ({ i, score: m.scores?.[subject.id] })).filter(p => p.score != null && Number.isFinite(Number(p.score)));
-        if (!pts.length) return;
-        const points = pts.map(p => `${x(p.i)},${y(p.score)}`).join(' ');
-        if (pts.length > 1) svg += `<polyline points="${points}" fill="none" stroke="${subject.color || '#10b981'}" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" />`;
-        pts.forEach(p => {
-          svg += `<circle cx="${x(p.i)}" cy="${y(p.score)}" r="4.5" fill="${subject.color || '#10b981'}" stroke="var(--card)" stroke-width="2"><title>${escapeHtml(subject.name)} · ${dateLabel(mocks[p.i].date)}: ${p.score}/${subject.maxScore}</title></circle>`;
-          svg += `<text x="${x(p.i)}" y="${y(p.score)-9}" fill="${subject.color || 'var(--text)'}" font-size="11" font-weight="700" text-anchor="middle">${p.score}</text>`;
+      const cards = SUBJECTS.map(subject => {
+        const mocks = allMocks.filter(m => m.scores?.[subject.id] != null && Number.isFinite(Number(m.scores[subject.id])));
+        if (!mocks.length) {
+          return `<div class="mock-score-chart"><div class="mock-score-chart-title">${subject.icon} ${escapeHtml(subject.name)}</div><div class="mock-chart-empty">Пока нет результатов по этому предмету.</div></div>`;
+        }
+        const maxScore = Math.max(1, Number(subject.maxScore) || 100);
+        const plotW = W - L - R, plotH = H - T - B;
+        const x = i => mocks.length === 1 ? L + plotW / 2 : L + i * plotW / (mocks.length - 1);
+        const y = v => T + plotH - (Math.max(0, Math.min(maxScore, Number(v) || 0)) / maxScore) * plotH;
+        const ticks = [0, .25, .5, .75, 1].map(k => Math.round(maxScore * k));
+        let svg = `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Динамика ${escapeHtml(subject.name)} по пробникам">`;
+        ticks.forEach(v => {
+          const yy = y(v);
+          svg += `<line x1="${L}" y1="${yy}" x2="${W-R}" y2="${yy}" stroke="var(--border)" stroke-width="1" />`;
+          svg += `<text x="${L-9}" y="${yy+4}" fill="var(--muted)" font-size="11" text-anchor="end">${v}</text>`;
         });
-      });
-      const labelCount = Math.min(mocks.length, 8);
-      const indexes = new Set();
-      for (let i = 0; i < labelCount; i++) indexes.add(labelCount === 1 ? 0 : Math.round(i * (mocks.length - 1) / (labelCount - 1)));
-      [...indexes].forEach(i => {
-        svg += `<text x="${x(i)}" y="${H-15}" fill="var(--muted)" font-size="11" text-anchor="middle">${dateLabel(mocks[i].date)}</text>`;
-      });
-      svg += '</svg>';
-      const legend = SUBJECTS.map(subject => `<div class="mock-chart-legend-item"><span class="mock-chart-dot" style="background:${subject.color || '#10b981'}"></span>${escapeHtml(subject.name)}</div>`).join('');
-      el.innerHTML = `<div class="mock-score-chart-title">Динамика баллов по пробникам</div>${svg}<div class="mock-chart-legend">${legend}</div>`;
+        const points = mocks.map((m, i) => `${x(i)},${y(m.scores[subject.id])}`).join(' ');
+        if (mocks.length > 1) svg += `<polyline points="${points}" fill="none" stroke="${subject.color || '#10b981'}" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" />`;
+        mocks.forEach((m, i) => {
+          const score = Number(m.scores[subject.id]);
+          svg += `<circle cx="${x(i)}" cy="${y(score)}" r="4.5" fill="${subject.color || '#10b981'}" stroke="var(--card)" stroke-width="2"><title>${escapeHtml(subject.name)} · ${dateLabel(m.date)}: ${score}/${maxScore}</title></circle>`;
+          svg += `<text x="${x(i)}" y="${y(score)-9}" fill="${subject.color || 'var(--text)'}" font-size="11" font-weight="700" text-anchor="middle">${score}</text>`;
+        });
+        const labelCount = Math.min(mocks.length, 8);
+        const indexes = new Set();
+        for (let i = 0; i < labelCount; i++) indexes.add(labelCount === 1 ? 0 : Math.round(i * (mocks.length - 1) / (labelCount - 1)));
+        [...indexes].forEach(i => {
+          svg += `<text x="${x(i)}" y="${H-15}" fill="var(--muted)" font-size="11" text-anchor="middle">${dateLabel(mocks[i].date)}</text>`;
+        });
+        svg += '</svg>';
+        return `<div class="mock-score-chart"><div class="mock-score-chart-title">${subject.icon} ${escapeHtml(subject.name)} <span style="color:var(--muted);font-weight:400">· ${maxScore} баллов</span></div>${svg}</div>`;
+      }).join('');
+      el.innerHTML = `<div class="mock-score-chart-title">Динамика баллов по предметам</div>${cards}`;
     }
 
     function renderMockProgress() {
